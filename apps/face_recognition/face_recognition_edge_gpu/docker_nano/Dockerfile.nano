@@ -1,0 +1,65 @@
+FROM nvcr.io/nvidia/l4t-pytorch:r32.7.1-pth1.9-py3
+
+ENV TZ=America/New_York
+ENV PUBKEY=1A127079A92F09ED
+
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Install face recognition dependencies
+RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys $PUBKEY
+RUN apt update && apt-get update -y
+RUN apt-get install -y \
+    cmake \
+    sed \
+    unzip \
+    wget \
+    libopenblas-dev \
+    liblapack-dev \
+    libjpeg-dev \
+    libpng-dev \
+    python3 \
+    python3-pip \
+    && apt-get clean && rm -rf /tmp/* /var/tmp/*
+RUN pip3 install --upgrade pip
+
+# Install cuda and cudnn libraries
+COPY libcuda.zip .
+RUN rm /usr/local/cuda/lib64/*.a
+RUN unzip -o libcuda.zip -d /usr/local/cuda/lib64/
+RUN rm libcuda.zip
+
+COPY cudnn.zip .
+RUN rm /usr/include/cudnn*
+RUN unzip -o cudnn.zip -d /usr/include/
+RUN rm cudnn.zip
+
+COPY libcudnn.zip .
+RUN rm /usr/lib/aarch64-linux-gnu/libcudnn*
+RUN unzip -o libcudnn.zip -d /usr/lib/aarch64-linux-gnu/
+RUN rm libcudnn.zip
+
+# Install dlib
+COPY install_dlib.sh .
+RUN chmod 777 install_dlib.sh
+RUN ./install_dlib.sh
+
+RUN apt-get remove -y wget unzip
+
+# permissions and nonroot user for tightened security
+RUN adduser nonroot
+RUN mkdir /home/app/ && chown -R nonroot:nonroot /home/app
+RUN mkdir -p /var/log/flask-app && touch /var/log/flask-app/flask-app.err.log && touch /var/log/flask-app/flask-app.out.log
+RUN chown -R nonroot:nonroot /var/log/flask-app
+WORKDIR /home/app
+USER nonroot
+
+# copy all the files to the container
+COPY --chown=nonroot:nonroot app/. .
+
+RUN pip install -r requirements.txt
+
+# Run the web service on container startup. Here we use the gunicorn
+# webserver, with one worker process and 8 threads.
+# For environments with multiple CPU cores, increase the number of workers
+# to be equal to the cores available.
+CMD exec python3 -m gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 app:app

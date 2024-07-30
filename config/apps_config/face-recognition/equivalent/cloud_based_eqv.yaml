@@ -1,0 +1,39 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  labels:
+    app: face-recognition-oblique
+  name: face-recognition-oblique
+  namespace: default
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/target: "70" # change this for different concurrency
+    spec:
+      containers:
+        - image: "" # build the image from the apps/ and add it here
+          env:
+          - name: SERVICE_URL
+            value: "" # add based on your IP; e.g. http://face-recognition.default.141.215.80.233.sslip.io/recognize
+          - name: HOST_HEADER
+            value: "" # add based on your IP; e.g. face-recognition.default.141.215.80.233.sslip.io
+      nodeSelector:
+        role: worker
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: face-recognition-oblique
+  namespace: default
+  labels:
+    serving.knative.dev/service: face-recognition-oblique
+spec:
+  namespaceSelector:
+    matchNames:
+    - default
+  selector:
+    matchLabels:
+      serving.knative.dev/service: face-recognition-oblique
+  podMetricsEndpoints:
+  - targetPort: 9091

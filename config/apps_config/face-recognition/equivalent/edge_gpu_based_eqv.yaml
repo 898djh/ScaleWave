@@ -1,0 +1,18 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  labels:
+    app: face-recognition-oblique
+  name: face-recognition-oblique
+  namespace: default
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/target: "70" # change this for different concurrency
+        autoscaling.knative.dev/max-scale: "1" # change max, 1 here as nano cannot support more
+    spec:
+      containers:
+        - image: "" # build the image from the apps/ and add it here
+      nodeSelector:
+        igpu: "true"

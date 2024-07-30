@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: jetson-metrics-exporter
+  labels:
+    team: gpu-monitoring
+spec:
+  selector:
+    matchLabels:
+      app: jetson-metrics-exporter  # This should match the label of your Service
+  namespaceSelector:
+    matchNames:
+    - observability  # Namespace where your Service and DaemonSet are deployed
+  endpoints:
+  - port: metrics  # This should match the name of the port in your Service
+    interval: 15s  # Scrape interval
+

@@ -1,0 +1,4 @@
+Flask
+dlib
+face-recognition
+gunicorn
