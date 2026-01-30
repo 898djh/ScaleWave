@@ -70,9 +70,9 @@ for k, v in service_metrics.items():
     services_index_mapping[k] = i
     
     # stop selecting services that do not report any metrics (meaning the service nodes have reached its max)
-    if "face-recognition-oblique-00003" in k:
+    if "face-recognition-oblique-00004" in k:
         node_ready_status = get_node_ready_status('nano-desktop')
-        pod_status = check_pod_status("default", "face-recognition-oblique-00003")
+        pod_status = check_pod_status("default", "face-recognition-oblique-00004")
         print("NODE AND POD STATUS: ", node_ready_status, pod_status)
         if node_ready_status != "True" or pod_status != "Running":
             v['cpu'] = capacities['cpu']
@@ -299,6 +299,36 @@ def get_revisions_with_traffic_split(service_name):
         return revisions_traffic
 
 
+def get_revisions(service_name: str | None = None, namespace: str | None = None) -> list[str]:
+    cmd = ["kn", "revision", "list", "-o", "json"]
+    if namespace:
+        cmd += ["-n", namespace]
+
+    out = subprocess.check_output(cmd, text=True)
+
+    import json
+    data = json.loads(out)
+
+    names = []
+    for item in data.get("items", []):
+        name = item.get("metadata", {}).get("name", "")
+        if not name:
+            continue
+        # Optional filter: only revisions belonging to a service
+        if service_name and not name.startswith(f"{service_name}-"):
+            continue
+        names.append(name)
+
+    # Sort by revision suffix number if present (…-00001, …-00002, ...)
+    def rev_key(n: str):
+        try:
+            return int(n.split("-")[-1])
+        except Exception:
+            return 10**12
+
+    return sorted(names, key=rev_key)
+
+
 def set_traffic_split(service_name, revision_traffic_list):
     """
     Sets traffic split for a Knative service.
@@ -395,55 +425,134 @@ def scale_dict_values_to_100_integers(original_dict):
     return scaled_rounded_dict
 
 
-def get_small_traffic_adjustments(prev_traffic, new_traffic, adjustment_factor=0.05):
+#def get_small_traffic_adjustments(prev_traffic, new_traffic, adjustment_factor=0.75):
     # Step 1: Calculate differences (b-a)
-    diff = {key: new_traffic[key] - prev_traffic[key] for key in new_traffic}
+#    diff = {key: new_traffic[key] - prev_traffic[key] for key in new_traffic}
 
     # Step 2: Identify keys with positive and negative differences
-    negative_keys = {key: diff[key] for key in diff if diff[key] < 0}
-    positive_keys = {key: diff[key] for key in diff if diff[key] > 0}
+#    negative_keys = {key: diff[key] for key in diff if diff[key] < 0}
+#    positive_keys = {key: diff[key] for key in diff if diff[key] > 0}
 
     # Step 3: Calculate total deduction and adjust values in 'a'
-    total_deduction = 0
+#    total_deduction = 0
     
-    for key in negative_keys:
-        # deduction = abs(prev_traffic[key] * adjustment_factor)
-        if key not in services_traffic_dist_factor.keys():
-            services_traffic_dist_factor[key] = 15
-        
-        deduction = abs(prev_traffic[key] * (adjustment_factor * services_traffic_dist_factor[key]))
-        total_deduction += deduction
-        prev_traffic[key] -= deduction
+#    for key in negative_keys:
+#        # deduction = abs(prev_traffic[key] * adjustment_factor)
+#        if key not in services_traffic_dist_factor.keys():
+#            services_traffic_dist_factor[key] = 15
+#        
+#        deduction = abs(prev_traffic[key] * (adjustment_factor * services_traffic_dist_factor[key]))
+#        total_deduction += deduction
+#        prev_traffic[key] -= deduction
 
     # Step 4: Distribute the deducted amount to keys with positive differences
-    total_positive_diff = sum(diff[key] for key in positive_keys)
+#    total_positive_diff = sum(diff[key] for key in positive_keys)
     
-    for key in positive_keys:
-        addition = total_deduction * (diff[key] / total_positive_diff)
-        prev_traffic[key] += addition
+#    for key in positive_keys:
+#        addition = total_deduction * (diff[key] / total_positive_diff)
+#        prev_traffic[key] += addition
 
     # Normalize to make sure sums to 100
-    total = sum(prev_traffic.values())
-    normalized_prev_traffic = {key: value / total * 100 for key, value in prev_traffic.items()}
+#    total = sum(prev_traffic.values())
+#    normalized_prev_traffic = {key: value / total * 100 for key, value in prev_traffic.items()}
 
     # Step 5: Round and adjust to sum to 100
-    rounded_prev_traffic = {key: int(value) for key, value in normalized_prev_traffic.items()}
-    rounding_error = 100 - sum(rounded_prev_traffic.values())
+#    rounded_prev_traffic = {key: int(value) for key, value in normalized_prev_traffic.items()}
+#    rounding_error = 100 - sum(rounded_prev_traffic.values())
 
     # Distributing the rounding error
-    fractions = {key: normalized_prev_traffic[key] - rounded_prev_traffic[key] for key in normalized_prev_traffic}
-    sorted_keys = sorted(fractions, key=fractions.get, reverse=True)
+#    fractions = {key: normalized_prev_traffic[key] - rounded_prev_traffic[key] for key in normalized_prev_traffic}
+#    sorted_keys = sorted(fractions, key=fractions.get, reverse=True)
 
-    for key in sorted_keys:
-        if rounding_error <= 0:
-            break
-        rounded_prev_traffic[key] += 1
-        rounding_error -= 1
+#    for key in sorted_keys:
+#        if rounding_error <= 0:
+#            break
+#        rounded_prev_traffic[key] += 1
+#        rounding_error -= 1
 
     # Results
-    print("Updated and rounded dictionary 'prev_traffic':", rounded_prev_traffic)
-    return rounded_prev_traffic
+#    print("Updated and rounded dictionary 'prev_traffic':", rounded_prev_traffic)
+#    return rounded_prev_traffic
 
+
+def get_small_traffic_adjustments(prev_traffic, new_traffic, adjustment_factor=0.25):
+    """
+    Move prev_traffic toward new_traffic, but cap each key's change to at most
+    adjustment_factor (default 25%) of its current contribution (prev share).
+    - Handles negative values in inputs (clips to 0).
+    - Normalizes both prev and new to sum to 100 before computing deltas.
+    - Caps per-key delta to +/- (adjustment_factor * prev_share).
+      If prev_share is ~0, allow a small cap based on target to enable ramp-up.
+    - Produces non-negative integer percentages summing to 100.
+    """
+    EPS = 1e-9
+    # Union of keys
+    keys = sorted(set(prev_traffic.keys()) | set(new_traffic.keys()))
+
+    # Sanitize negatives (traffic can't be negative); treat missing as 0
+    prev = {k: max(0.0, float(prev_traffic.get(k, 0.0))) for k in keys}
+    new  = {k: max(0.0, float(new_traffic.get(k, 0.0))) for k in keys}
+
+    # Normalize both to sum to 100 (so "contribution" is comparable)
+    def normalize_to_100(d):
+        total = sum(d.values())
+        if total <= EPS:
+            # If everything is zero, split evenly
+            n = len(d)
+            return {k: (100.0 / n if n > 0 else 0.0) for k in d}
+        return {k: (v / total) * 100.0 for k, v in d.items()}
+
+    prev_norm = normalize_to_100(prev)
+    new_norm  = normalize_to_100(new)
+
+    # Compute desired delta and cap it per key (±25% of prev share)
+    capped = {}
+    for k in keys:
+        desired_delta = new_norm[k] - prev_norm[k]
+
+        # Cap is proportional to current contribution (prev share).
+        # If prev share is ~0, allow some movement based on target share too
+        # so a key can ramp up from 0.
+        base = max(prev_norm[k], new_norm[k], 1.0)  # 1.0 avoids "stuck at 0"
+        cap_abs = adjustment_factor * base
+
+        # Apply cap
+        if desired_delta > cap_abs:
+            delta = cap_abs
+        elif desired_delta < -cap_abs:
+            delta = -cap_abs
+        else:
+            delta = desired_delta
+
+        capped[k] = prev_norm[k] + delta
+
+    # Ensure non-negative, then renormalize to 100 again
+    capped = {k: max(0.0, v) for k, v in capped.items()}
+    capped = normalize_to_100(capped)
+
+    #Convert to integers summing to 100 (largest remainder method)
+    floored = {k: int(capped[k]) for k in keys}
+    remainder = 100 - sum(floored.values())
+
+    # Distribute remaining points to largest fractional parts
+    fracs = sorted(keys, key=lambda k: (capped[k] - floored[k]), reverse=True)
+    i = 0
+    while remainder > 0 and i < len(fracs):
+        floored[fracs[i]] += 1
+        remainder -= 1
+        i += 1
+
+    # If (rarely) we overshoot due to weird inputs, remove from smallest fractions
+    while remainder < 0:
+        fracs_low = sorted(keys, key=lambda k: (capped[k] - floored[k]))
+        for k in fracs_low:
+            if remainder == 0:
+                break
+            if floored[k] > 0:
+                floored[k] -= 1
+                remainder += 1
+
+    return floored
 
 # Calculate and display proportions post-solution
 total = sum(best_solution)
@@ -460,8 +569,9 @@ if total > 0:
     current_traffic_distribution = get_revisions_with_traffic_split(service_name)
 
     # remove later with dynamic
-    revisions = ['face-recognition-oblique-00001', 'face-recognition-oblique-00002', 
-                'face-recognition-oblique-00003', 'face-recognition-oblique-00004']
+    # revisions = ['face-recognition-oblique-00001', 'face-recognition-oblique-00002', 
+    #             'face-recognition-oblique-00003', 'face-recognition-oblique-00004']
+    revisions = get_revisions(service_name="face-recognition-oblique", namespace="default")
 
     for revision in revisions:
         if revision not in current_traffic_distribution.keys():
@@ -472,26 +582,26 @@ if total > 0:
 
     if current_traffic_distribution != optimized_traffic_distribution:
         # Filter out items with a value of 0
-
         optimized_traffic_distribution = get_small_traffic_adjustments(current_traffic_distribution, 
                                                                         optimized_traffic_distribution)
 
         filtered_dict = {key: value for key, value in optimized_traffic_distribution.items() if value != 0}
+        print("Gradual Traffic Change: ", optimized_traffic_distribution)
 
-        if 'face-recognition-oblique-00003' in filtered_dict.keys():
-            allocated_value = filtered_dict['face-recognition-oblique-00003']
-            filtered_dict['face-recognition-oblique-00003'] = round(allocated_value / 8)
+        if 'face-recognition-oblique-00004' in filtered_dict.keys():
+            allocated_value = filtered_dict['face-recognition-oblique-00004']
+            filtered_dict['face-recognition-oblique-00004'] = round(allocated_value / 8)
             no_of_services = len(filtered_dict.keys())
 
             if no_of_services > 1:
                 equal_halves = round(allocated_value / no_of_services)
                 for service, percent in filtered_dict.items():
-                    if service != 'face-recognition-oblique-00003':
+                    if service != 'face-recognition-oblique-00004':
                         filtered_dict[service] = percent + equal_halves
                 filtered_dict = scale_dict_values_to_100_integers(filtered_dict)
                 
-            for service, percent in filtered_dict.items():
-                optimized_traffic_distribution[service] = percent
+        for service, percent in filtered_dict.items():
+            optimized_traffic_distribution[service] = percent
         set_traffic_split(service_name, optimized_traffic_distribution.items())
 
 if current_pid is not None:

@@ -9,15 +9,15 @@ spec:
   template:
     metadata:
       annotations:
-        autoscaling.knative.dev/target: "70" # change this for different concurrency
+        autoscaling.knative.dev/target: "{CONCURRENCY_VALUE}" # change this for different concurrency  # used in expt.(70, 35, 18)
     spec:
       containers:
-        - image: "" # build the image from the apps/ and add it here
+        - image: "summitshrestha/face-recognition-eqv-cloud:latest" # build the image from the apps/ and add it here
           env:
           - name: SERVICE_URL
-            value: "" # add based on your IP; e.g. http://face-recognition.default.141.215.80.233.sslip.io/recognize
+            value: "http://face-recognition-standalone-cloud.default.{CLOUD_IP}.sslip.io/recognize" # add based on your IP; e.g. http://face-recognition.default.141.215.80.233.sslip.io/recognize
           - name: HOST_HEADER
-            value: "" # add based on your IP; e.g. face-recognition.default.141.215.80.233.sslip.io
+            value: "face-recognition-standalone-cloud.default.{CLOUD_IP}.sslip.io" # add based on your IP; e.g. face-recognition.default.141.215.80.233.sslip.io
       nodeSelector:
         role: worker
 ---

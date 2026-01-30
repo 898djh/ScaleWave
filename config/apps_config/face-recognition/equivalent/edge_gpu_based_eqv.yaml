@@ -9,10 +9,10 @@ spec:
   template:
     metadata:
       annotations:
-        autoscaling.knative.dev/target: "70" # change this for different concurrency
+        autoscaling.knative.dev/target: "{CONCURRENCY_VALUE}" # change this for different concurrency
         autoscaling.knative.dev/max-scale: "1" # change max, 1 here as nano cannot support more
     spec:
       containers:
-        - image: "" # build the image from the apps/ and add it here
+        - image: "summitshrestha/face-recognition-eqv-edge-gpu-nano:latest" # for x86, use: "summitshrestha/face-recognition-eqv-edge-gpu-x86:latest"
       nodeSelector:
         igpu: "true"

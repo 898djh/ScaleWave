@@ -1,3 +1,4 @@
+import argparse
 import multiprocessing
 import threading
 import time
@@ -6,6 +7,19 @@ import requests
 import os
 import random
 from datetime import datetime
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--manager_node_ip", help="IP of the manager node")
+    p.add_argument("--route_url", help="Route URL obtained in Step 5")
+    p.add_argument("--c", help="Concurrency value the current setup is running")
+    return p.parse_args()
+
+args = parse_args()
+manager_ip = str(args.manager_node_ip).strip()
+route_headers = str(args.route_url).strip().replace("http://", "").replace("https://", "").strip()
+concurrency_val = str(args.c)
 
 
 def read_inter_arrival_times(file_path):
@@ -33,9 +47,9 @@ def send_request(user_id, metrics):
         # Simulate actual request
         filenames = ['two_people.jpg', 'ob.jpg', 'many_people.jpg', 'obama_small.jpg']
         filename = random.choice(filenames)
-        headers = {'Host': 'face-recognition.default.example.com'}  # Replace with your host headers
+        headers = {'Host': f'{route_headers}'}  # Replace with your host headers
         my_img = {'image': open(filename, 'rb')}
-        response = requests.post("http://192.168.1.150/recognize", headers=headers, files=my_img)  # Replace with your actual target URL
+        response = requests.post(f"http://{manager_ip}/recognize", headers=headers, files=my_img)  # Replace with your actual target URL
         status_code = response.status_code
         request_end_time = datetime.now()
         print(response.json())
@@ -82,7 +96,7 @@ def write_metrics_to_csv(metrics, output_file):
 
 if __name__ == "__main__":
     folder_path = os.path.join(os.getcwd(), "trace")
-    output_file = 'output_metrics.csv'
+    output_file = f'results/output_metrics_c{concurrency_val}.csv'
     metrics = multiprocessing.Manager().list()
 
     processes = []
